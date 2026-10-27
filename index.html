@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0e1013">
-<title>FitTrack.app.31</title>
+<title>FitTrack</title>
 <style>
 :root{--bg:#0e1013;--card:#181c21;--line:#272d34;--tx:#e8ecef;--mu:#8a949e;--g:#b6ff3b;--o:#ff7a1a;--r:#ff5d5d}
 *{box-sizing:border-box;margin:0}
@@ -41,6 +41,11 @@ button.sm{padding:5px 10px;font-size:.8rem}
 .li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.li:last-child{border:0}
 .ok{color:var(--g)}.sc{color:#6cc4ff}.no{color:var(--r)}
 svg{width:100%;height:auto;display:block}
+.rf{transition:stroke-dashoffset 1.4s ease-out}.ring{width:130px;height:130px;flex:none}.rc{display:flex;gap:18px;align-items:center}
+details{border-bottom:1px solid var(--line)}details:last-of-type{border:0}
+summary{cursor:pointer;display:flex;gap:8px;padding:12px 0;list-style:none}summary::-webkit-details-marker{display:none}
+summary span{margin-left:auto}summary::after{content:"+";color:var(--g);font-weight:800}details[open] summary::after{content:"-"}
+details>div{padding-bottom:6px}
 .vl{display:inline-block;margin:0 10px 10px 0;padding:11px 18px;border:1px solid var(--line);border-radius:10px;color:var(--g);text-decoration:none;font-weight:700}
 </style>
 </head>
@@ -48,7 +53,7 @@ svg{width:100%;height:auto;display:block}
 <div id="app"></div>
 <script>
 const KEY='fittrack_v1';
-let S=Object.assign({p:null,logs:{},wk:[],plan:{n:0,s:{}},mode:'steps'},JSON.parse(localStorage.getItem(KEY)||'null')||{});
+let S=Object.assign({p:null,logs:{},wk:[],plan:{n:0,s:{}},mode:'steps',prot:'med',sleepGoal:8},JSON.parse(localStorage.getItem(KEY)||'null')||{});
 const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -59,16 +64,25 @@ const bmi=(w,h)=>w/((h/100)**2);
 const cat=b=>b<18.5?['Underweight',"Let's build up strength safely!"]:b<25?['Normal','Great job!']:b<30?['Overweight',"Let's work on a healthy plan!"]:['Obese',"Let's start a steady, healthy plan!"];
 const PACE={loss:{slow:.25,mid:.5,fast:1},gain:{slow:.25,mid:.35,fast:.5}};
 const PN={slow:'Slow (Safe & Sustainable)',mid:'Mid (Balanced)',fast:'Fast (Aggressive)'};
-const MUSC=['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core'];
+const MUSC=['Chest','Back','Shoulders','Biceps','Triceps','Legs','Core','Cardio'];
 const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-const EX={Chest:['Bench Press','Incline Dumbbell Press','Push-ups','Cable Fly'],Back:['Pull-ups','Lat Pulldown','Seated Cable Row','Deadlift'],Shoulders:['Overhead Press','Lateral Raise','Face Pull','Front Raise'],Biceps:['Barbell Curl','Hammer Curl','Preacher Curl'],Triceps:['Triceps Pushdown','Skull Crushers','Bench Dips'],Legs:['Squat','Leg Press','Walking Lunges','Romanian Deadlift','Calf Raise'],Core:['Plank','Crunches','Hanging Leg Raise','Russian Twist']};
+const EX={Chest:['Bench Press','Incline Bench Press','Decline Bench Press','Dumbbell Press','Incline Dumbbell Press','Dumbbell Fly','Cable Fly','Chest Dips','Push-ups','Machine Chest Press','Pec Deck'],
+Back:['Pull-ups','Chin-ups','Lat Pulldown','Seated Cable Row','Barbell Row','One-Arm Dumbbell Row','T-Bar Row','Deadlift','Straight-Arm Pulldown','Back Extension'],
+Shoulders:['Overhead Press','Dumbbell Shoulder Press','Arnold Press','Lateral Raise','Front Raise','Rear Delt Fly','Face Pull','Upright Row','Dumbbell Shrugs'],
+Biceps:['Barbell Curl','Dumbbell Curl','Hammer Curl','Preacher Curl','Concentration Curl','Incline Dumbbell Curl','Cable Curl','Reverse Curl'],
+Triceps:['Triceps Pushdown','Skull Crushers','Overhead Triceps Extension','Close-Grip Bench Press','Bench Dips','Triceps Kickback','Diamond Push-ups'],
+Legs:['Squat','Front Squat','Leg Press','Hack Squat','Walking Lunges','Bulgarian Split Squat','Leg Extension','Leg Curl','Romanian Deadlift','Hip Thrust','Calf Raise','Step-ups'],
+Core:['Plank','Side Plank','Crunches','Bicycle Crunch','Hanging Leg Raise','Cable Crunch','Russian Twist','Ab Wheel Rollout','Mountain Climbers'],
+Cardio:['Treadmill Run','Brisk Walk','Cycling','Rowing Machine','Jump Rope','Stair Climber','Elliptical','Swimming','HIIT Circuit']};
 const vid=n=>'https://www.youtube.com/results?search_query='+encodeURIComponent(n+' exercise animation proper form');
-function protein(p,w){const h=p.h/100,ideal=25*h*h,base=bmi(w,p.h)>=30?ideal+.25*(w-ideal):w;return[Math.round(base*1.6),Math.round(base*(p.goal=='loss'?2:2.2))]}
+const PL={low:[1.2,1.5],med:[1.6,1.9],high:[2,2.2]};
+function protein(p,w,l){const h=p.h/100,ideal=25*h*h,base=bmi(w,p.h)>=30?ideal+.25*(w-ideal):w,r=PL[l]||PL.med;return[Math.round(base*r[0]),Math.round(base*r[1])]}
+const fmtH=h=>{const m=Math.round(h*60);return Math.floor(m/60)+'h '+m%60+'m'};
 function gymMin(p,b){const c=cat(b)[0],m={Underweight:[45,'Short, heavy lifting sessions. Go easy on cardio.'],Normal:[45,'A balanced mix of weights and cardio.'],Overweight:[50,'Weights, then 10-15 min of cardio.'],Obese:[30,'Start with low-impact moves and build up to 45 min over a few weeks.']}[c];return{min:m[0]+(p.pace=='fast'&&p.goal=='loss'&&c!='Obese'?10:0),note:m[1]}}
 const rateOf=(d,k)=>Math.round(Math.min(PACE[d.goal][k],d.w*.01)*100)/100;
 const stepGoal=p=>{let s=p.goal=='loss'?{slow:8000,mid:10000,fast:12000}[p.pace]:7000;return p.w0&&bmi(p.w0,p.h)>=30?Math.min(s,8000):s};
 
-let step=0,D={},tab='home',msg='',ld=today();
+let step=0,D={},tab='home',msg='',ld=today(),ldAuto=true,openD=null;
 
 /* ---------- ONBOARDING ---------- */
 function keep(){const e=$('#f4');if(e)D.kg=+e.value}
@@ -111,7 +125,7 @@ const curW=()=>{const l=wLogs();return l.length?l[l.length-1].w:S.p.w0};
 const goalW=()=>S.p.goal=='loss'?S.p.w0-S.p.kg:S.p.w0+S.p.kg;
 const progress=()=>Math.max(0,Math.min(1,(S.p.goal=='loss'?S.p.w0-curW():curW()-S.p.w0)/S.p.kg));
 const wkOn=d=>S.wk.some(x=>x.d==d);
-const hasLog=d=>wkOn(d)||(S.logs[d]&&(S.logs[d].steps||S.logs[d].km||S.logs[d].w||S.logs[d].gym));
+const hasLog=d=>wkOn(d)||(S.logs[d]&&(S.logs[d].steps||S.logs[d].km||S.logs[d].w||S.logs[d].gym||S.logs[d].sleep));
 const hasGym=d=>wkOn(d)||(S.logs[d]&&S.logs[d].gym>0);
 function streak(f){let d=today(),n=0;if(!f(d))d=addDays(d,-1);while(f(d)){n++;d=addDays(d,-1)}return n}
 function weekRange(){const t=today(),i=(new Date().getDay()+6)%7,s=addDays(t,-i);return[s,addDays(s,6)]}
@@ -127,39 +141,50 @@ function chart(){
 
 /* ---------- MAIN APP ---------- */
 function app(){
+  if(ldAuto)ld=today();
   const tabs=[['home','Home'],['log','Daily log'],['gym','Gym'],['more','Profile']];
   $('#app').innerHTML=`<div class="nav"><div class="wrap"><span>FitTrack</span>${tabs.map(([k,t])=>`<button class="${tab==k?'on':''}" onclick="tab='${k}';app()">${t}</button>`).join('')}</div></div><div class="wrap">${{home:home,log:logTab,gym:gymTab,more:more}[tab]()}</div>`;
+  setTimeout(()=>document.querySelectorAll('.rf').forEach(c=>{const C=+c.getAttribute('stroke-dasharray');c.style.strokeDashoffset=C*(1-c.dataset.p)}),60);
 }
 function home(){
   const p=S.p,cw=curW(),b=bmi(cw,p.h),c=cat(b),pr=progress(),left=p.kg*(1-pr),days=Math.ceil(left/p.rate*7);
-  const tl=S.logs[today()]||{},sg=stepGoal({...p,w0:p.w0}),km=S.mode=='km',val=km?(tl.km||0):(tl.steps||0),goal=km?Math.round(sg/130)/10:sg,sp=Math.min(1,val/goal),pt=protein(p,cw),gt=gymMin(p,b),gp=Math.min(1,(tl.gym||0)/gt.min);
-  return `<h1>Hi, ${esc(p.name)}</h1><p class="m" style="margin-bottom:14px">${p.goal=='loss'?'Lose':'Gain'} ${p.rate} kg/week - ${pr>=1?'goal reached!':days+' days to go'}</p>
+  const tl=S.logs[today()]||{},sg=stepGoal({...p,w0:p.w0}),km=S.mode=='km',val=km?(tl.km||0):(tl.steps||0),goal=km?Math.round(sg/130)/10:sg,sp=Math.min(1,val/goal),pt=protein(p,cw,S.prot),gt=gymMin(p,b),gp=Math.min(1,(tl.gym||0)/gt.min);
+  const sl=tl.sleep||0,rem=Math.max(0,S.sleepGoal-sl),C=2*Math.PI*54;
+  return `<h1>Hi, ${esc(p.name)}</h1><p class="m" style="margin-bottom:14px">${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})} - ${p.goal=='loss'?'Lose':'Gain'} ${p.rate} kg/week - ${pr>=1?'goal reached!':days+' days to go'}</p>
   <div class="grid"><div class="card"><div class="m small">Current weight</div><div class="big">${cw.toFixed(1)}<span class="m" style="font-size:1rem"> kg</span></div></div>
   <div class="card"><div class="m small">BMI</div><div class="big">${b.toFixed(1)}</div><span class="tag ${c[0]}">${c[0]}</span></div></div>
-  <div class="card"><h2>Goal progress (${p.w0} to ${goalW().toFixed(1)} kg)</h2><div class="bar"><b style="width:${pr*100}%"></b></div><span class="m small">${Math.round(pr*100)}% complete</span></div>
+  <div class="card rc"><svg class="ring" viewBox="0 0 130 130" role="img" aria-label="Goal progress"><circle cx="65" cy="65" r="54" fill="none" stroke="#272d34" stroke-width="12"/><circle class="rf" data-p="${pr}" cx="65" cy="65" r="54" fill="none" stroke="#b6ff3b" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 65 65)"/><text x="65" y="73" text-anchor="middle" fill="#e8ecef" font-size="26" font-weight="800">${Math.round(pr*100)}%</text></svg>
+  <div><h2>Goal progress</h2><p class="m">${p.w0} kg to ${goalW().toFixed(1)} kg</p><p>${pr>=1?'Goal reached!':left.toFixed(1)+' kg to go'}</p></div></div>
   <div class="grid"><div class="card"><div class="m small">Logging streak</div><div class="streak">${streak(hasLog)} days</div></div>
   <div class="card"><div class="m small">Gym streak</div><div class="streak">${streak(hasGym)} days</div></div></div>
   <div class="card"><h2>Today's ${km?'distance':'steps'}: ${km?val+' km':val.toLocaleString()} / ${km?goal+' km':goal.toLocaleString()}</h2><div class="bar o"><b style="width:${sp*100}%"></b></div></div>
-  <div class="grid"><div class="card"><div class="m small">Daily protein target</div><div class="big">${pt[0]}-${pt[1]}<span class="m" style="font-size:1rem"> g</span></div><p class="m small">Based on your weight (${cw.toFixed(1)} kg) and height (${p.h} cm). General guidance only. Check with a doctor if you have kidney problems.</p></div>
+  <div class="grid"><div class="card"><div class="m small">Daily protein target</div><div class="row" style="margin:8px 0 4px">${[['low','Low'],['med','Medium'],['high','High']].map(([k,t])=>`<button class="chip ${S.prot==k?'on':''}" onclick="setProt('${k}')">${t}</button>`).join('')}</div><div class="big">${pt[0]}-${pt[1]}<span class="m" style="font-size:1rem"> g</span></div><p class="m small">Based on your weight (${cw.toFixed(1)} kg) and height (${p.h} cm). General guidance only. Check with a doctor if you have kidney problems.</p></div>
   <div class="card"><div class="m small">Minimum gym time</div><div class="big">${gt.min}<span class="m" style="font-size:1rem"> min</span></div><p class="m small">per session. ${gt.note}</p><div class="bar o"><b style="width:${gp*100}%"></b></div><span class="m small">Today: ${fmtMin(tl.gym)}</span></div></div>
+  <div class="card"><h2>Sleep</h2><div class="bar"><b style="width:${Math.min(100,sl/S.sleepGoal*100)}%"></b></div><p>${sl?`${fmtH(sl)} of ${fmtH(S.sleepGoal)}. ${rem>0?fmtH(rem)+' more to reach your goal.':'Sleep goal reached!'}`:`Goal: ${fmtH(S.sleepGoal)}. Log last night's sleep in the Daily log.`}</p></div>
   <div class="card"><h2>Weight over time</h2>${chart()}</div>`;
 }
 function logTab(){
-  const l=S.logs[ld]||{},gm=l.gym||0;
+  const l=S.logs[ld]||{},gm=l.gym||0,sl=l.sleep||0,rem=Math.max(0,S.sleepGoal-sl);
   const recent=Object.keys(S.logs).sort().reverse().slice(0,7);
-  return `<h1>Daily log</h1><div class="card"><label>Date<input type="date" value="${ld}" max="${today()}" onchange="ld=this.value||today();app()"></label>
+  return `<h1>Daily log</h1><div class="card"><label>Date<input type="date" value="${ld}" max="${today()}" onchange="setLd(this.value)"></label>${ldAuto?'<p class="m small" style="margin-bottom:12px">Showing today. This updates automatically each day.</p>':'<button class="ghost sm" style="margin-bottom:12px" onclick="setLd(today())">Back to today</button>'}
   <p class="m small" style="margin-bottom:12px">Recommended: ${S.mode=='km'?(stepGoal({...S.p})/1300).toFixed(1)+' km':stepGoal({...S.p}).toLocaleString()+' steps'} a day.</p>
   <div class="row" style="margin-bottom:10px"><button class="chip ${S.mode!='km'?'on':''}" onclick="setMode('steps')">Steps</button><button class="chip ${S.mode=='km'?'on':''}" onclick="setMode('km')">Run / walk distance</button></div>
   <div class="grid">${S.mode=='km'?`<label>Distance (km)<input id="l2" type="number" step="0.1" min="0" value="${l.km||''}"></label>`:`<label>Steps<input id="l1" type="number" min="0" value="${l.steps||''}"></label>`}
   <label>Weight check-in (kg)<input id="l3" type="number" step="0.1" value="${l.w||''}"></label>
-  <div class="row"><label>Gym hours<input id="l4" type="number" min="0" value="${gm?Math.floor(gm/60):''}"></label><label>Minutes<input id="l5" type="number" min="0" max="59" value="${gm?gm%60:''}"></label></div></div>
+  <div class="row"><label>Gym hours<input id="l4" type="number" min="0" value="${gm?Math.floor(gm/60):''}"></label><label>Minutes<input id="l5" type="number" min="0" max="59" value="${gm?gm%60:''}"></label></div>
+  <div class="row"><label>Hours slept<input id="l6" type="number" step="0.25" min="0" max="24" value="${sl||''}"></label><label>Sleep goal (hours)<input id="l7" type="number" step="0.5" min="4" max="12" value="${S.sleepGoal}"></label></div></div>
+  <p class="${sl&&!rem?'ok':'m'}" style="margin-bottom:12px">${sl?(rem>0?fmtH(rem)+' of sleep left to reach your goal.':'Sleep goal reached!'):'Enter your sleep to see how much is left to reach your goal.'}</p>
   <button onclick="saveLog()">Save log</button></div>
-  <div class="card"><h2>Recent days</h2>${recent.length?recent.map(d=>{const x=S.logs[d];return `<div class="li"><span>${d}</span><span class="m small">${x.km&&!x.steps?x.km+' km':(x.steps||0)+' steps'} - ${x.w?x.w+' kg':'no weight'} - gym ${fmtMin(x.gym)}</span></div>`}).join(''):'<p class="m">Nothing logged yet. Fill in the form above to start your streak.</p>'}</div>`;
+  <div class="card"><h2>Recent days</h2>${recent.length?recent.map(d=>{const x=S.logs[d];return `<div class="li"><span>${d}</span><span class="m small">${x.km&&!x.steps?x.km+' km':(x.steps||0)+' steps'} - ${x.w?x.w+' kg':'no weight'} - gym ${fmtMin(x.gym)} - sleep ${x.sleep?x.sleep+'h':'-'}</span></div>`}).join(''):'<p class="m">Nothing logged yet. Fill in the form above to start your streak.</p>'}</div>`;
 }
+function setLd(v){ld=v||today();ldAuto=ld==today();app()}
+function setProt(k){S.prot=k;save();app()}
+function togDay(i,o){o?openD.add(i):openD.delete(i)}
 function setMode(m){S.mode=m;save();app()}
 function saveLog(){
   const n=id=>+($(id)||{}).value||0,o=S.logs[ld]||{},k=S.mode=='km';
-  S.logs[ld]={steps:k?o.steps||0:n('#l1'),km:k?n('#l2'):o.km||0,w:n('#l3'),gym:n('#l4')*60+n('#l5')};
+  S.logs[ld]={steps:k?o.steps||0:n('#l1'),km:k?n('#l2'):o.km||0,w:n('#l3'),gym:n('#l4')*60+n('#l5'),sleep:n('#l6')};
+  S.sleepGoal=Math.min(12,Math.max(4,n('#l7')||8));
   save();app();
 }
 function setDays(n){S.plan.n=n;save();app()}
@@ -170,6 +195,7 @@ function gymTab(){
   const pl=S.plan;
   if(!pl.n)return `<h1>Gym</h1><div class="card"><h2>How many days a week will you work out?</h2><div class="row">${[1,2,3,4,5,6,7].map(n=>`<button class="chip" onclick="setDays(${n})">${n}</button>`).join('')}</div></div>`;
   const [ws,we]=weekRange(),t=today(),ti=(new Date().getDay()+6)%7,sch=pl.s;
+  if(openD===null)openD=new Set([ti]);
   const planned=DAYS.filter((d,i)=>(sch[i]||[]).length).length,need=pl.n-planned;
   const tg=[...new Set(Object.values(sch).flat())].filter(m=>MUSC.includes(m));
   const pv=need>0?`Add ${need} more workout day${need>1?'s':''} to match your ${pl.n}-day plan.`:need<0?`You planned ${-need} day${-need>1?'s':''} too many. Remove ${-need} or raise your days per week.`:`Plan complete: ${pl.n} workout days.`;
@@ -178,23 +204,27 @@ function gymTab(){
   const verdict=!tg.length?'Add muscle groups to your weekly plan.':miss?`${miss} muscle group${miss>1?'s':''} missed this week. Move them to a remaining day.`:'On track: every target muscle is trained or planned this week.';
   const tm=sch[ti]||[],m0=tm[0]||MUSC[0];
   const list=[...S.wk].sort((a,b)=>b.d.localeCompare(a.d)).slice(0,12);
+  const best={};S.wk.forEach(x=>{if(x.kg&&(!best[x.e]||x.kg>best[x.e].kg))best[x.e]={kg:x.kg,d:x.d}});
+  const bl=Object.entries(best).sort((a,b)=>b[1].kg-a[1].kg);
   return `<h1>Gym</h1><div class="grid"><div class="card"><div class="m small">Workout streak</div><div class="streak">${streak(hasGym)} days</div></div><div class="card"><div class="m small">Workouts this week</div><div class="streak">${new Set(S.wk.filter(x=>x.d>=ws&&x.d<=t).map(x=>x.d)).size} / ${pl.n}</div></div></div>
-  <div class="card"><div class="li" style="border:0"><h2 style="margin:0">Weekly plan: ${pl.n} days</h2><button class="ghost sm" onclick="S.plan.n=0;save();app()">Change days</button></div><p class="m small" style="margin-bottom:6px">Choose the muscles you train on each day. Leave a day empty for rest.</p>
-  ${DAYS.map((d,i)=>`<div class="li" style="align-items:flex-start;flex-wrap:wrap"><b style="min-width:98px">${d}${i==ti?' (today)':''}</b><span>${MUSC.map(m=>`<button class="chip sm ${(sch[i]||[]).includes(m)?'on':''}" onclick="tgDay(${i},'${m}')">${m}</button>`).join('')}</span></div>`).join('')}
+  <div class="card"><div class="li" style="border:0"><h2 style="margin:0">Weekly plan: ${pl.n} days</h2><button class="ghost sm" onclick="S.plan.n=0;save();app()">Change days</button></div><p class="m small" style="margin-bottom:6px">Tap a day to open it and choose muscles. Leave a day empty for rest.</p>
+  ${DAYS.map((d,i)=>`<details ${openD.has(i)?'open':''} ontoggle="togDay(${i},this.open)"><summary><b>${d}${i==ti?' (today)':''}</b><span class="m small">${(sch[i]||[]).join(', ')||'Rest'}</span></summary><div>${MUSC.map(m=>`<button class="chip sm ${(sch[i]||[]).includes(m)?'on':''}" onclick="tgDay(${i},'${m}')">${m}</button>`).join('')}</div></details>`).join('')}
   <p style="margin-top:10px"><b class="${need?'no':'ok'}">${pv}</b></p></div>
   <div class="card"><h2>This week's coverage</h2>${cov.map(c=>`<div class="li"><span>${c[0]}</span><span class="${c[1]}">${c[2]}</span></div>`).join('')}<p style="margin-top:10px"><b>${verdict}</b></p></div>
   <div class="card"><h2>Log an exercise</h2><p class="m small" style="margin-bottom:8px">${tm.length?'Today: '+tm.join(' + '):'Rest day today. You can still log a workout.'}</p>
   <div class="grid"><label>Date<input id="g1" type="date" value="${t}"></label><label>Muscle group<select id="g2" onchange="exOpts()">${MUSC.map(m=>`<option ${m==m0?'selected':''}>${m}</option>`).join('')}</select></label>
   <label>Exercise type<select id="g6" onchange="vLink()">${EX[m0].map(e=>`<option>${e}</option>`).join('')}</select></label><label>Or type your own exercise<input id="g3" maxlength="40" oninput="vLink()"></label>
-  <label>Sets<input id="g4" type="number" min="1"></label><label>Reps<input id="g5" type="number" min="1"></label></div>
+  <label>Sets<input id="g4" type="number" min="1"></label><label>Reps<input id="g5" type="number" min="1"></label>
+  <label>Max weight (kg)<input id="g7" type="number" step="0.5" min="0"></label></div>
   <a id="vl" class="vl" href="${vid(EX[m0][0])}" target="_blank" rel="noopener">Watch animation video</a><button onclick="addEx()">Add exercise</button></div>
+  <div class="card"><h2>Personal bests (max weight)</h2>${bl.length?bl.map(([e,v])=>`<div class="li"><span>${esc(e)}</span><span><b class="ok">${v.kg} kg</b> <span class="m small">${v.d}</span></span></div>`).join(''):'<p class="m">Log an exercise with a max weight to see your bests here.</p>'}</div>
   <div class="card"><h2>Exercise guide</h2><p class="m small">Tap an exercise to watch an animated demo.</p>${(tm.length?tm:MUSC).map(m=>`<p style="margin:10px 0 6px"><b>${m}</b></p>${EX[m].map(e=>`<a class="chip" style="text-decoration:none;color:var(--tx)" href="${vid(e)}" target="_blank" rel="noopener">${e}</a>`).join('')}`).join('')}</div>
-  <div class="card"><h2>Recent exercises</h2>${list.length?list.map(x=>`<div class="li"><span>${x.d} - <b>${esc(x.m)}</b>: ${esc(x.e)} ${x.s?`<span class="m small">${x.s}x${x.r||'-'}</span>`:''}</span><button class="ghost sm" onclick="delEx(${x.id})">Delete</button></div>`).join(''):'<p class="m">No exercises yet. Add your first one above.</p>'}</div>`;
+  <div class="card"><h2>Recent exercises</h2>${list.length?list.map(x=>`<div class="li"><span>${x.d} - <b>${esc(x.m)}</b>: ${esc(x.e)} ${x.s?`<span class="m small">${x.s}x${x.r||'-'}</span>`:''} ${x.kg?`<span class="ok small">max ${x.kg} kg</span>`:''}</span><button class="ghost sm" onclick="delEx(${x.id})">Delete</button></div>`).join(''):'<p class="m">No exercises yet. Add your first one above.</p>'}</div>`;
 }
 function addEx(){
   const e=$('#g3').value.trim()||$('#g6').value,d=$('#g1').value;
   if(!d)return alert('Pick a date.');
-  S.wk.push({id:Date.now(),d,m:$('#g2').value,e,s:+$('#g4').value||0,r:+$('#g5').value||0});
+  S.wk.push({id:Date.now(),d,m:$('#g2').value,e,s:+$('#g4').value||0,r:+$('#g5').value||0,kg:+$('#g7').value||0});
   save();app();
 }
 function delEx(id){S.wk=S.wk.filter(x=>x.id!=id);save();app()}
@@ -203,6 +233,10 @@ function more(){
   return `<h1>Profile</h1><div class="grid"><div class="card"><div class="m small">Logging streak</div><div class="streak">${streak(hasLog)} days</div></div><div class="card"><div class="m small">Gym streak</div><div class="streak">${streak(hasGym)} days</div></div></div><div class="card"><p><b>${esc(p.name)}</b> - ${p.gender}, ${p.h} cm</p><p class="m">Start weight ${p.w0} kg - ${p.goal=='loss'?'lose':'gain'} ${p.kg} kg at ${p.rate} kg/week (${PN[p.pace]})</p><p class="m">Started ${p.start}</p></div>
   <div class="card"><h2>Start over</h2><p class="m" style="margin-bottom:10px">This deletes your profile and all logs from this browser.</p><button class="ghost" onclick="if(confirm('Delete all data?')){localStorage.removeItem(KEY);location.reload()}">Reset everything</button></div>`;
 }
+
+let lastDay=today();
+function dayCheck(){if(today()!=lastDay){lastDay=today();if(ldAuto)ld=today();if(S.p)app()}}
+setInterval(dayCheck,60000);document.addEventListener('visibilitychange',dayCheck);
 
 S.p?app():wiz();
 </script>
