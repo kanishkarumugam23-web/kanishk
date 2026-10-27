@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0e1013">
+<title>FitTrack</title>
+<style>
+:root{--bg:#0e1013;--card:#181c21;--line:#272d34;--tx:#e8ecef;--mu:#8a949e;--g:#b6ff3b;--o:#ff7a1a;--r:#ff5d5d}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.5 "Segoe UI",system-ui,sans-serif;min-height:100vh}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.7rem;margin-bottom:6px}h2{font-size:1.05rem;margin-bottom:10px}
+.m{color:var(--mu)}.small{font-size:.85rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.grid{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+@media(max-width:560px){.grid{grid-template-columns:1fr}}
+input,select{width:100%;background:#10141a;border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:11px;font:inherit;margin:6px 0 12px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--g);outline-offset:1px}
+label{display:block;color:var(--mu);font-size:.9rem}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:11px 18px;background:var(--g);color:#0b1000;font-weight:700}
+button.ghost{background:transparent;color:var(--tx);border:1px solid var(--line)}
+button.sm{padding:5px 10px;font-size:.8rem}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1}
+.opt{background:var(--card);color:var(--tx);border:2px solid var(--line);text-align:left;padding:14px}
+.opt.sel{border-color:var(--g)}.opt:disabled{opacity:.4;cursor:not-allowed}
+.dots{display:flex;gap:6px;margin-bottom:22px}.dots i{flex:1;height:5px;border-radius:3px;background:var(--line)}.dots i.on{background:var(--g)}
+.big{font-size:3.2rem;font-weight:800;line-height:1.1}
+.tag{display:inline-block;padding:3px 12px;border-radius:20px;font-weight:700;margin:6px 0;background:#2a3037}
+.Underweight{color:#6cc4ff}.Normal{color:var(--g)}.Overweight{color:var(--o)}.Obese{color:var(--r)}
+.err{color:var(--r);margin:8px 0}
+.bar{height:12px;background:var(--line);border-radius:6px;overflow:hidden;margin:8px 0}.bar b{display:block;height:100%;background:var(--g);border-radius:6px}
+.bar.o b{background:var(--o)}
+.nav{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);z-index:5}
+.nav .wrap{display:flex;gap:6px;align-items:center;padding:10px 16px}
+.nav button{background:transparent;color:var(--mu);padding:8px 12px}.nav button.on{background:var(--card);color:var(--g)}
+.nav span{margin-right:auto;font-weight:800;color:var(--g)}
+.streak{font-size:2.2rem;font-weight:800;color:var(--o)}
+.chip{display:inline-block;padding:7px 14px;margin:0 6px 8px 0;border:1px solid var(--line);border-radius:20px;background:transparent;color:var(--tx);font-weight:500}
+.chip.on{background:var(--g);color:#0b1000;border-color:var(--g);font-weight:700}
+.li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.li:last-child{border:0}
+.ok{color:var(--g)}.sc{color:#6cc4ff}.no{color:var(--r)}
+svg{width:100%;height:auto;display:block}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const KEY='fittrack_v1';
+let S=JSON.parse(localStorage.getItem(KEY)||'null')||{p:null,logs:{},wk:[],targets:[]};
+const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const today=()=>iso(new Date());
+const addDays=(s,n)=>{const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return iso(d)};
+const bmi=(w,h)=>w/((h/100)**2);
+const cat=b=>b<18.5?['Underweight',"Let's build up strength safely!"]:b<25?['Normal','Great job!']:b<30?['Overweight',"Let's work on a healthy plan!"]:['Obese',"Let's start a steady, healthy plan!"];
+const PACE={loss:{slow:.25,mid:.5,fast:1},gain:{slow:.25,mid:.35,fast:.5}};
+const PN={slow:'Slow (Safe & Sustainable)',mid:'Mid (Balanced)',fast:'Fast (Aggressive)'};
+const MUSC=['Chest','Back','Legs','Shoulders','Arms','Core'];
+const rateOf=(d,k)=>Math.round(Math.min(PACE[d.goal][k],d.w*.01)*100)/100;
+const stepGoal=p=>{let s=p.goal=='loss'?{slow:8000,mid:10000,fast:12000}[p.pace]:7000;return p.w0&&bmi(p.w0,p.h)>=30?Math.min(s,8000):s};
+
+let step=0,D={},tab='home',msg='',ld=today();
+
+/* ---------- ONBOARDING ---------- */
+function keep(){const e=$('#f4');if(e)D.kg=+e.value}
+function err(m){msg=m;wiz()}
+function wiz(){
+  let b='';
+  if(step==0)b=`<h1>Welcome to FitTrack</h1><p class="m">What should we call you?</p><input id="f0" value="${esc(D.name||'')}" placeholder="Your name" maxlength="30">`;
+  if(step==1)b=`<h1>Select your gender</h1><p class="m">Pick one to continue.</p><div class="row">${['Male','Female'].map(g=>`<button class="opt ${D.gender==g?'sel':''}" onclick="D.gender='${g}';wiz()">${g}</button>`).join('')}</div>`;
+  if(step==2)b=`<h1>Your measurements</h1><label>Weight (kg)<input id="f2" type="number" step="0.1" value="${D.w||''}"></label><label>Height (cm)<input id="f3" type="number" value="${D.h||''}"></label>`;
+  if(step==3){const x=bmi(D.w,D.h),c=cat(x);b=`<h1>Your BMI</h1><div class="big">${x.toFixed(1)}</div><div class="tag ${c[0]}">${c[0]}</div><p>${c[0]} - ${c[1]}</p>`}
+  if(step==4)b=`<h1>Your main goal</h1><div class="row">${[['loss','Weight Loss'],['gain','Weight Gain']].map(([k,t])=>`<button class="opt ${D.goal==k?'sel':''}" onclick="keep();D.goal='${k}';wiz()">${t}</button>`).join('')}</div>${D.goal?`<label style="margin-top:14px">How many kg do you want to ${D.goal=='loss'?'lose':'gain'}?<input id="f4" type="number" step="0.5" value="${D.kg||''}"></label>`:''}`;
+  if(step==5){const lowBmi=D.goal=='loss'&&bmi(D.w,D.h)<25;
+    b=`<h1>Choose your pace</h1><p class="m">Weekly change is capped at a safe level for your body weight.</p>${['slow','mid','fast'].map(k=>{const r=rateOf(D,k),off=k=='fast'&&lowBmi;return `<button class="opt ${D.pace==k?'sel':''}" style="width:100%;margin-bottom:10px" ${off?'disabled':''} onclick="D.pace='${k}';wiz()"><b>${PN[k]}</b><br><span class="m small">${r} kg per week - about ${Math.ceil(D.kg/r)} weeks${off?' - not available at your BMI':''}</span></button>`}).join('')}`}
+  if(step==6){const r=rateOf(D,D.pace),wk=D.kg/r,gw=D.goal=='loss'?D.w-D.kg:D.w+D.kg;
+    b=`<h1>Your plan, ${esc(D.name)}</h1><div class="card"><p>Goal weight: <b>${gw.toFixed(1)} kg</b></p><p>Weekly target: <b>${D.goal=='loss'?'lose':'gain'} ${r} kg/week</b></p><p>Estimated time: <b>${Math.ceil(wk*7)} days (${wk.toFixed(1)} weeks)</b></p><p>Daily step goal: <b>${stepGoal({...D,w0:D.w}).toLocaleString()} steps</b></p></div>`}
+  $('#app').innerHTML=`<div class="wrap" style="padding-top:28px"><div class="dots">${[0,1,2,3,4,5,6].map(i=>`<i class="${i<=step?'on':''}"></i>`).join('')}</div>${b}${msg?`<p class="err">${msg}</p>`:''}<div class="row" style="margin-top:18px">${step>0?'<button class="ghost" onclick="msg=\'\';step--;wiz()">Back</button>':''}<button onclick="${step==6?'finish()':'next()'}">${step==6?'Start tracking':'Next'}</button></div></div>`;
+  const f=$('#f0')||$('#f2');if(f)f.focus();
+}
+function next(){
+  msg='';
+  if(step==0){D.name=$('#f0').value.trim();if(!D.name)return err('Enter your name.')}
+  if(step==1&&!D.gender)return err('Pick one option.');
+  if(step==2){D.w=+$('#f2').value;D.h=+$('#f3').value;if(!(D.w>=30&&D.w<=300&&D.h>=100&&D.h<=250))return err('Enter a weight of 30-300 kg and a height of 100-250 cm.')}
+  if(step==4){keep();if(!D.goal)return err('Choose a goal.');if(!(D.kg>0&&D.kg<=60))return err('Enter an amount between 0.5 and 60 kg.');
+    const gb=bmi(D.goal=='loss'?D.w-D.kg:D.w+D.kg,D.h);
+    if(D.goal=='loss'&&(bmi(D.w,D.h)<18.5||gb<18.5))return err('That goal would put you in the underweight BMI range. Try a smaller amount.');
+    if(D.goal=='gain'&&gb>=30)return err('That goal would put you in the obese BMI range. Try a smaller amount.');
+    D.pace=null}
+  if(step==5&&!D.pace)return err('Choose a pace.');
+  step++;wiz();
+}
+function finish(){
+  S.p={name:D.name,gender:D.gender,w0:D.w,h:D.h,goal:D.goal,kg:D.kg,pace:D.pace,rate:rateOf(D,D.pace),start:today()};
+  save();tab='home';app();
+}
+
+/* ---------- HELPERS ---------- */
+const wLogs=()=>Object.keys(S.logs).filter(d=>d>=S.p.start&&S.logs[d].w).sort().map(d=>({d,w:S.logs[d].w}));
+const curW=()=>{const l=wLogs();return l.length?l[l.length-1].w:S.p.w0};
+const goalW=()=>S.p.goal=='loss'?S.p.w0-S.p.kg:S.p.w0+S.p.kg;
+const progress=()=>Math.max(0,Math.min(1,(S.p.goal=='loss'?S.p.w0-curW():curW()-S.p.w0)/S.p.kg));
+const wkOn=d=>S.wk.some(x=>x.d==d);
+const hasLog=d=>wkOn(d)||(S.logs[d]&&(S.logs[d].steps||S.logs[d].km||S.logs[d].w||S.logs[d].gym));
+const hasGym=d=>wkOn(d)||(S.logs[d]&&S.logs[d].gym>0);
+function streak(f){let d=today(),n=0;if(!f(d))d=addDays(d,-1);while(f(d)){n++;d=addDays(d,-1)}return n}
+function weekRange(){const t=today(),i=(new Date().getDay()+6)%7,s=addDays(t,-i);return[s,addDays(s,6)]}
+const fmtMin=m=>m?(Math.floor(m/60)?Math.floor(m/60)+'h ':'')+(m%60)+'m':'-';
+
+function chart(){
+  const pts=[{d:S.p.start,w:S.p.w0},...wLogs()],g=goalW();
+  const t=d=>(new Date(d)-new Date(S.p.start))/864e5,maxT=Math.max(1,t(pts[pts.length-1].d));
+  const ws=pts.map(p=>p.w).concat(g),lo=Math.min(...ws)-1,hi=Math.max(...ws)+1;
+  const X=d=>40+(t(d)/maxT)*548,Y=w=>12+(1-(w-lo)/(hi-lo))*184;
+  return `<svg viewBox="0 0 600 220" role="img" aria-label="Weight over time"><line x1="40" x2="588" y1="${Y(g)}" y2="${Y(g)}" stroke="#ff7a1a" stroke-dasharray="5 4"/><text x="44" y="${Y(g)-5}" fill="#ff7a1a" font-size="11">goal ${g.toFixed(1)}</text><polyline fill="none" stroke="#b6ff3b" stroke-width="3" points="${pts.map(p=>X(p.d)+','+Y(p.w)).join(' ')}"/>${pts.map(p=>`<circle cx="${X(p.d)}" cy="${Y(p.w)}" r="4" fill="#b6ff3b"/>`).join('')}<text x="2" y="${Y(hi-1)+4}" fill="#8a949e" font-size="11">${(hi-1).toFixed(0)}</text><text x="2" y="${Y(lo+1)+4}" fill="#8a949e" font-size="11">${(lo+1).toFixed(0)}</text><text x="40" y="214" fill="#8a949e" font-size="11">${S.p.start}</text><text x="588" y="214" text-anchor="end" fill="#8a949e" font-size="11">${pts[pts.length-1].d}</text></svg>`;
+}
+
+/* ---------- MAIN APP ---------- */
+function app(){
+  const tabs=[['home','Home'],['log','Daily log'],['gym','Gym'],['more','Profile']];
+  $('#app').innerHTML=`<div class="nav"><div class="wrap"><span>FitTrack</span>${tabs.map(([k,t])=>`<button class="${tab==k?'on':''}" onclick="tab='${k}';app()">${t}</button>`).join('')}</div></div><div class="wrap">${{home:home,log:logTab,gym:gymTab,more:more}[tab]()}</div>`;
+}
+function home(){
+  const p=S.p,cw=curW(),b=bmi(cw,p.h),c=cat(b),pr=progress(),left=p.kg*(1-pr),days=Math.ceil(left/p.rate*7);
+  const tl=S.logs[today()]||{},sg=stepGoal({...p,w0:p.w0}),sp=Math.min(1,(tl.steps||0)/sg);
+  return `<h1>Hi, ${esc(p.name)}</h1><p class="m" style="margin-bottom:14px">${p.goal=='loss'?'Lose':'Gain'} ${p.rate} kg/week - ${pr>=1?'goal reached!':days+' days to go'}</p>
+  <div class="grid"><div class="card"><div class="m small">Current weight</div><div class="big">${cw.toFixed(1)}<span class="m" style="font-size:1rem"> kg</span></div></div>
+  <div class="card"><div class="m small">BMI</div><div class="big">${b.toFixed(1)}</div><span class="tag ${c[0]}">${c[0]}</span></div></div>
+  <div class="card"><h2>Goal progress (${p.w0} to ${goalW().toFixed(1)} kg)</h2><div class="bar"><b style="width:${pr*100}%"></b></div><span class="m small">${Math.round(pr*100)}% complete</span></div>
+  <div class="grid"><div class="card"><div class="m small">Logging streak</div><div class="streak">${streak(hasLog)} days</div></div>
+  <div class="card"><div class="m small">Gym streak</div><div class="streak">${streak(hasGym)} days</div></div></div>
+  <div class="card"><h2>Today's steps: ${(tl.steps||0).toLocaleString()} / ${sg.toLocaleString()}</h2><div class="bar o"><b style="width:${sp*100}%"></b></div></div>
+  <div class="card"><h2>Weight over time</h2>${chart()}</div>`;
+}
+function logTab(){
+  const l=S.logs[ld]||{},gm=l.gym||0;
+  const recent=Object.keys(S.logs).sort().reverse().slice(0,7);
+  return `<h1>Daily log</h1><div class="card"><label>Date<input type="date" value="${ld}" max="${today()}" onchange="ld=this.value||today();app()"></label>
+  <p class="m small" style="margin-bottom:12px">Recommended: ${stepGoal({...S.p}).toLocaleString()} steps a day.</p>
+  <div class="grid"><label>Steps<input id="l1" type="number" min="0" value="${l.steps||''}"></label><label>Run / walk distance (km)<input id="l2" type="number" step="0.1" min="0" value="${l.km||''}"></label>
+  <label>Weight check-in (kg)<input id="l3" type="number" step="0.1" value="${l.w||''}"></label>
+  <div class="row"><label>Gym hours<input id="l4" type="number" min="0" value="${gm?Math.floor(gm/60):''}"></label><label>Minutes<input id="l5" type="number" min="0" max="59" value="${gm?gm%60:''}"></label></div></div>
+  <button onclick="saveLog()">Save log</button></div>
+  <div class="card"><h2>Recent days</h2>${recent.length?recent.map(d=>{const x=S.logs[d];return `<div class="li"><span>${d}</span><span class="m small">${x.steps||0} steps - ${x.km||0} km - ${x.w?x.w+' kg':'no weight'} - gym ${fmtMin(x.gym)}</span></div>`}).join(''):'<p class="m">Nothing logged yet. Fill in the form above to start your streak.</p>'}</div>`;
+}
+function saveLog(){
+  const n=id=>+$(id).value||0;
+  S.logs[ld]={steps:n('#l1'),km:n('#l2'),w:n('#l3'),gym:n('#l4')*60+n('#l5')};
+  save();app();
+}
+function gymTab(){
+  const [ws,we]=weekRange(),t=today(),tg=S.targets;
+  const cov=tg.map(m=>{const tr=S.wk.some(x=>x.m==m&&x.d>=ws&&x.d<=t),sc=S.wk.some(x=>x.m==m&&x.d>t&&x.d<=we);return[m,tr?'ok':sc?'sc':'no',tr?'Trained':sc?'Scheduled':'Not yet']});
+  const miss=cov.filter(c=>c[1]=='no').length,left=Math.round((new Date(we)-new Date(t))/864e5)+1;
+  const verdict=!tg.length?'Pick your target muscle groups above.':miss?`${miss} muscle group${miss>1?'s':''} still need a session - ${left} day${left>1?'s':''} left this week.`:'All target muscles are covered this week. Nice work!';
+  const list=[...S.wk].sort((a,b)=>b.d.localeCompare(a.d)).slice(0,12);
+  return `<h1>Gym</h1><div class="grid"><div class="card"><div class="m small">Workout streak</div><div class="streak">${streak(hasGym)} days</div></div><div class="card"><div class="m small">Workouts this week</div><div class="streak">${new Set(S.wk.filter(x=>x.d>=ws&&x.d<=t).map(x=>x.d)).size}</div></div></div>
+  <div class="card"><h2>Weekly target muscles</h2>${MUSC.map(m=>`<button class="chip ${tg.includes(m)?'on':''}" onclick="tgl('${m}')">${m}</button>`).join('')}
+  <div style="margin-top:6px">${cov.map(c=>`<div class="li"><span>${c[0]}</span><span class="${c[1]}">${c[2]}</span></div>`).join('')}</div><p style="margin-top:10px"><b>${verdict}</b></p></div>
+  <div class="card"><h2>Log an exercise</h2><p class="m small" style="margin-bottom:8px">Pick a future date to schedule a workout.</p>
+  <div class="grid"><label>Date<input id="g1" type="date" value="${t}"></label><label>Muscle group<select id="g2">${MUSC.map(m=>`<option>${m}</option>`).join('')}</select></label>
+  <label>Exercise<input id="g3" placeholder="e.g. Bench press" maxlength="40"></label><div class="row"><label>Sets<input id="g4" type="number" min="1"></label><label>Reps<input id="g5" type="number" min="1"></label></div></div>
+  <button onclick="addEx()">Add exercise</button></div>
+  <div class="card"><h2>Recent exercises</h2>${list.length?list.map(x=>`<div class="li"><span>${x.d} - <b>${esc(x.m)}</b>: ${esc(x.e)} ${x.s?`<span class="m small">${x.s}x${x.r||'-'}</span>`:''}</span><button class="ghost sm" onclick="delEx(${x.id})">Delete</button></div>`).join(''):'<p class="m">No exercises yet. Add your first one above.</p>'}</div>`;
+}
+function tgl(m){const i=S.targets.indexOf(m);i<0?S.targets.push(m):S.targets.splice(i,1);save();app()}
+function addEx(){
+  const e=$('#g3').value.trim(),d=$('#g1').value;
+  if(!e||!d)return alert('Enter a date and an exercise name.');
+  S.wk.push({id:Date.now(),d,m:$('#g2').value,e,s:+$('#g4').value||0,r:+$('#g5').value||0});
+  save();app();
+}
+function delEx(id){S.wk=S.wk.filter(x=>x.id!=id);save();app()}
+function more(){
+  const p=S.p;
+  return `<h1>Profile</h1><div class="card"><p><b>${esc(p.name)}</b> - ${p.gender}, ${p.h} cm</p><p class="m">Start weight ${p.w0} kg - ${p.goal=='loss'?'lose':'gain'} ${p.kg} kg at ${p.rate} kg/week (${PN[p.pace]})</p><p class="m">Started ${p.start}</p></div>
+  <div class="card"><h2>Start over</h2><p class="m" style="margin-bottom:10px">This deletes your profile and all logs from this browser.</p><button class="ghost" onclick="if(confirm('Delete all data?')){localStorage.removeItem(KEY);location.reload()}">Reset everything</button></div>`;
+}
+
+S.p?app():wiz();
+</script>
+</body>
+</html>
